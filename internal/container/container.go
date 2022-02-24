@@ -80,9 +80,10 @@ func NewContainer(runtime Runtime, cfg Config) Container {
 		events:   make(chan State, 1),
 		shutdown: make(chan struct{}),
 		ready:    make(chan struct{}),
-		state:    atomic.NewInt32(Starting),
+		state:    atomic.NewInt32(-1),
 		log:      &logger,
 	}
+	c.setState(Starting)
 	go c.initialize()
 	return c
 }
