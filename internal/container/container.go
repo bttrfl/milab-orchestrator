@@ -178,6 +178,7 @@ func (c *container) makeRequest(input string) *processRequest {
 
 		resp, err := c.client.Do(httpReq)
 		if err != nil {
+			req.result.Code = 500
 			req.result.Err = err
 			return
 		}

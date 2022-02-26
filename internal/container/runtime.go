@@ -75,6 +75,14 @@ func (r *DockerRuntime) LaunchContainer(
 		return nil, fmt.Errorf("failed to create container: %w", err)
 	}
 
+	defer func() {
+		if err != nil {
+			r.cli.ContainerRemove(context.Background(), body.ID, types.ContainerRemoveOptions{
+				Force: true,
+			})
+		}
+	}()
+
 	err = r.cli.ContainerStart(ctx, body.ID, types.ContainerStartOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to start container: %w", err)
