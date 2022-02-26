@@ -115,6 +115,17 @@ func (c *container) initialize() {
 	c.log.Info().Msg("Container initialized")
 }
 
+func (c *container) setState(s State) {
+	if c.State() == s {
+		return
+	}
+	c.state.Store(int32(s))
+	select {
+	case c.events <- s:
+	default:
+	}
+}
+
 func (c *container) ID() string { return c.cfg.ID }
 
 func (c *container) Name() string { return c.cfg.Name }
@@ -140,6 +151,38 @@ func (c *container) Process(ctx context.Context, input string) (*ComputeResult, 
 	case <-req.done:
 	}
 	return req.result, nil
+}
+
+func (c *container) waitReady(ctx context.Context) error {
+	if c.State() == Starting {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-c.ready:
+		}
+	}
+	return nil
+}
+
+func (c *container) getOrMakeRequest(input string) *processRequest {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	req := c.requests[input]
+	if req == nil {
+		c.log.Info().
+			Str("input", input).
+			Msg("Making new request")
+
+		req = c.makeRequest(input)
+		c.requests[input] = req
+	} else {
+		c.log.Info().
+			Str("input", input).
+			Msg("Reusing existing request")
+
+		req.clients.Add(1)
+	}
+	return req
 }
 
 func (c *container) makeRequest(input string) *processRequest {
@@ -195,6 +238,15 @@ func (c *container) makeRequest(input string) *processRequest {
 	return req
 }
 
+func (c *container) removeRequest(input string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	delete(c.requests, input)
+	if len(c.requests) == 0 {
+		c.setState(Idle)
+	}
+}
+
 func (c *container) Shutdown() {
 	defer c.setState(Finished)
 	c.log.Info().Msg("Shutting container down")
@@ -220,56 +272,4 @@ func (c *container) Shutdown() {
 			Msg("Failed to remove container")
 	}
 	c.log.Info().Msg("Container finished")
-}
-
-func (c *container) waitReady(ctx context.Context) error {
-	if c.State() == Starting {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-c.ready:
-		}
-	}
-	return nil
-}
-
-func (c *container) setState(s State) {
-	if c.State() == s {
-		return
-	}
-	c.state.Store(int32(s))
-	select {
-	case c.events <- s:
-	default:
-	}
-}
-
-func (c *container) getOrMakeRequest(input string) *processRequest {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	req := c.requests[input]
-	if req == nil {
-		c.log.Info().
-			Str("input", input).
-			Msg("Making new request")
-
-		req = c.makeRequest(input)
-		c.requests[input] = req
-	} else {
-		c.log.Info().
-			Str("input", input).
-			Msg("Reusing existing request")
-
-		req.clients.Add(1)
-	}
-	return req
-}
-
-func (c *container) removeRequest(input string) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	delete(c.requests, input)
-	if len(c.requests) == 0 {
-		c.setState(Idle)
-	}
 }
